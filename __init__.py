@@ -1,0 +1,1 @@
+# FFTNet model module initialization
