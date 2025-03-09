@@ -1,6 +1,6 @@
 # FFTNet Implementation
 
-This repository contains a PyTorch implementation of FFTNet, an efficient alternative to self-attention as described in the paper ["The FFT Strikes Back: An Efficient Alternative to Self-Attention"](https://arxiv.org/abs/2307.00302v2).
+This repository contains a PyTorch implementation of FFTNet, an efficient alternative to self-attention as described in the paper ["The FFT Strikes Back: An Efficient Alternative to Self-Attention"](https://arxiv.org/abs/2502.18394).
 
 ## Overview
 
