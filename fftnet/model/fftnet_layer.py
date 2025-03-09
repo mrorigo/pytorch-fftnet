@@ -8,11 +8,11 @@ class FFTNetLayer(nn.Module):
     """
     def __init__(self, embedding_dim, mlp_hidden_dim=128, dropout=0.1, layer_norm=True):
         super(FFTNetLayer, self).__init__()
-        self.layer_norm = layer_norm
+        self.layer_norm=layer_norm # Correctly assign layer_norm
+        dropout=dropout # Correctly assign dropout
 
-        if layer_norm:
-            self.input_norm = nn.LayerNorm(embedding_dim)
-            self.output_norm = nn.LayerNorm(embedding_dim)
+        self.input_norm = nn.LayerNorm(embedding_dim)
+        self.output_norm = nn.LayerNorm(embedding_dim)
 
         # Core FFTNet components
         self.fourier_transform = FourierTransform()
@@ -62,4 +62,6 @@ class FFTNetLayer(nn.Module):
         if self.layer_norm:
             output = self.output_norm(output)
 
+        # Log output tensor shape
+        # print(f"FFTNetLayer Output shape: {output.shape}") # Debugging - can be removed
         return output

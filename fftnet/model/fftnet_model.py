@@ -36,18 +36,16 @@ class FFTNet(nn.Module):
         self.output_proj = nn.Linear(d_model, vocab_size)
 
         # Initialize positional encodings
-        self._init_positional_encoding(max_seq_length, d_model)
+        # self._init_positional_encoding(max_seq_length, d_model)
 
-    def _init_positional_encoding(self, max_seq_length, d_model):
-        """Initialize positional encodings using the sinusoidal method."""
-        position = torch.arange(0, max_seq_length).unsqueeze(1).float()
-        div_term = torch.exp(torch.arange(0, d_model, 2).float() * -(math.log(10000.0) / d_model))
-
-        pos_enc = torch.zeros(1, max_seq_length, d_model)
-        pos_enc[0, :, 0::2] = torch.sin(position * div_term)
-        pos_enc[0, :, 1::2] = torch.cos(position * div_term)
-
-        self.pos_encoding.data = pos_enc
+    # New helper method to compute positional encodings dynamically for any sequence length
+    def get_positional_encoding(self, seq_len, d_model):
+        position = torch.arange(seq_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2, dtype=torch.float) * -(math.log(10000.0) / d_model))
+        pos_enc = torch.zeros(seq_len, d_model)
+        pos_enc[:, 0::2] = torch.sin(position * div_term)
+        pos_enc[:, 1::2] = torch.cos(position * div_term)
+        return pos_enc.unsqueeze(0)  # Shape: (1, seq_len, d_model)
 
     def forward(self, x):
         """
@@ -57,11 +55,16 @@ class FFTNet(nn.Module):
         Returns:
             torch.Tensor: Output logits of shape (batch_size, seq_len, vocab_size).
         """
+
+        # print(f"FFTNetModel Input shape: {x.shape}") # Debugging - can be removed
+
         seq_len = x.size(1)
 
-        # Embedding and positional encoding
+        # Embedding and dynamic positional encoding
         x = self.embedding(x) * math.sqrt(self.d_model)
-        x = x + self.pos_encoding[:, :seq_len, :]
+        # Compute positional encodings dynamically based on current sequence length
+        pos_encoding = self.get_positional_encoding(seq_len, self.d_model).to(x.device)
+        x = x + pos_encoding
 
         # Apply FFTNet layers
         for layer in self.layers:
@@ -71,4 +74,5 @@ class FFTNet(nn.Module):
         x = self.output_norm(x)
         logits = self.output_proj(x)
 
+        # print(f"FFTNetModel Output shape: {logits.shape}") # Debugging - can be removed
         return logits

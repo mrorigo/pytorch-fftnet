@@ -1,11 +1,14 @@
+import sys
+import os
+sys.path.insert(0, os.path.abspath('.'))
 import argparse
 import torch
 import os
 import matplotlib.pyplot as plt
-from utils.tokenizer import TiktokenTokenizer
-from utils.dataset import SyntheticSequenceDataset, create_dataloaders
-from model.fftnet_model import FFTNet
-from utils.trainer import Trainer
+from fftnet.utils.tokenizer import TiktokenTokenizer
+from fftnet.utils.dataset import TextDataset, create_dataloaders
+from fftnet.model.fftnet_model import FFTNet
+from fftnet.utils.trainer import Trainer
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Train and evaluate FFTNet model")
@@ -16,16 +19,15 @@ def parse_args():
     parser.add_argument("--mlp_hidden_dim", type=int, default=512, help="MLP hidden dimension")
     parser.add_argument("--max_seq_length", type=int, default=128, help="Maximum sequence length")
     parser.add_argument("--dropout", type=float, default=0.1, help="Dropout rate")
+    parser.add_argument("--tokenizer", type=str, default="cl100k_base", help="Tokenizer encoding name")
 
     # Dataset parameters
-    parser.add_argument("--num_samples", type=int, default=10000, help="Number of synthetic samples")
-    parser.add_argument("--seq_length", type=int, default=64, help="Sequence length")
-    parser.add_argument("--vocab_size", type=int, default=1000, help="Vocabulary size")
-    parser.add_argument("--pattern_complexity", type=float, default=0.5, help="Pattern complexity (0-1)")
+    parser.add_argument("--seq_length", type=int, default=128, help="Sequence length")
+    parser.add_argument("--text_file", type=str, default="tinyshakespeare.txt", help="Path to the text file")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
 
     # Training parameters
-    parser.add_argument("--batch_size", type=int, default=32, help="Batch size")
+    parser.add_argument("--batch_size", type=int, default=64, help="Batch size")
     parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
     parser.add_argument("--weight_decay", type=float, default=0.01, help="Weight decay")
     parser.add_argument("--num_epochs", type=int, default=30, help="Number of epochs")
@@ -36,6 +38,7 @@ def parse_args():
                         help="Device to train on")
     parser.add_argument("--output_dir", type=str, default="./outputs", help="Output directory")
     parser.add_argument("--save_model", action="store_true", help="Save the best model")
+    parser.add_argument("--resume", type=str, default=None, help="Path to a saved model checkpoint to resume training from")
 
     return parser.parse_args()
 
@@ -58,19 +61,28 @@ def main():
 
     # Create output directory if it doesn't exist
     os.makedirs(args.output_dir, exist_ok=True)
+    os.makedirs(os.path.join(args.output_dir, "logs"), exist_ok=True)
 
     # Set random seeds for reproducibility
     torch.manual_seed(args.seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(args.seed)
 
-    print(f"Creating synthetic dataset with {args.num_samples} samples...")
-    # Create synthetic dataset
-    dataset = SyntheticSequenceDataset(
-        num_samples=args.num_samples,
+    # Download tinyshakespeare corpus if it doesn't exist
+    if not os.path.exists(args.text_file):
+        print("Downloading tinyshakespeare corpus...")
+        os.system("wget https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt -O- | cat > tinyshakespeare.txt")
+
+    print(f"Creating TextDataset from {args.text_file}...")
+    # Create tokenizer
+    tokenizer = TiktokenTokenizer(encoding_name=args.tokenizer)
+
+    # Create TextDataset
+    dataset = TextDataset(
+        text_file=args.text_file,
+        tokenizer=tokenizer,
         seq_length=args.seq_length,
-        vocab_size=args.vocab_size,
-        pattern_complexity=args.pattern_complexity,
+        vocab_size=tokenizer.vocab_size,
         seed=args.seed
     )
 
@@ -80,16 +92,32 @@ def main():
         batch_size=args.batch_size
     )
 
-    print(f"Initializing FFTNet model...")
+    print("Initializing FFTNet model...")
     # Initialize model
     model = FFTNet(
-        vocab_size=args.vocab_size,
+        vocab_size=dataset.vocab_size,
         d_model=args.d_model,
         num_layers=args.num_layers,
         mlp_hidden_dim=args.mlp_hidden_dim,
         max_seq_length=args.max_seq_length,
         dropout=args.dropout
     )
+
+    # Load model if resume is specified
+    if args.resume:
+        if os.path.isfile(args.resume):
+            print(f"Loading model from checkpoint {args.resume}")
+            checkpoint = torch.load(args.resume, map_location=args.device, weights_only=False)
+            model.load_state_dict(checkpoint['model_state_dict'])
+            start_epoch = checkpoint.get('epoch', 0) + 1
+        else:
+            print(f"Checkpoint not found: {args.resume}")
+            start_epoch = 0
+    else:
+        start_epoch = 0
+
+    num_params = sum(p.numel() for p in model.parameters())
+    print(f"Model has {num_params} parameters")
 
     # Create trainer
     trainer = Trainer(
@@ -99,7 +127,9 @@ def main():
         test_loader=test_loader,
         lr=args.lr,
         weight_decay=args.weight_decay,
-        device=args.device
+        device=args.device,
+        start_epoch=start_epoch,
+        args=args
     )
 
     print(f"Training FFTNet model for {args.num_epochs} epochs...")
